@@ -1,0 +1,52 @@
+generator client {
+  provider   = "prisma-client"
+  engineType = "client"
+  output     = "../src/generated/prisma"
+  previewFeatures = ["relationJoins", "schemaEngineDriverAdapters", "partialIndexes", "nativeDistinct"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  posts     Post[]
+  comments  Comment[]
+}
+
+model Post {
+  id         Int        @id @default(autoincrement())
+  title      String
+  body       String
+  authorId   Int
+  createdAt  DateTime   @default(now())
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments   Comment[]
+  categories Category[] @relation("PostCategories")
+
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  body      String
+  postId    Int
+  authorId  Int
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([authorId])
+}
+
+model Category {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  posts Post[] @relation("PostCategories")
+}

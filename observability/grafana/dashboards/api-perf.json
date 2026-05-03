@@ -1,0 +1,130 @@
+{
+  "uid": "api-perf",
+  "title": "Prisma vs TypeORM — API Perf",
+  "schemaVersion": 39,
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "scenario",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(k6_http_req_duration_seconds, scenario)",
+        "refresh": 2,
+        "includeAll": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "p95 latency by ORM",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (orm) (rate(k6_http_req_duration_seconds{scenario=~\"$scenario\"}[1m])))",
+          "legendFormat": "{{orm}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "p99 latency by ORM",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (orm) (rate(k6_http_req_duration_seconds{scenario=~\"$scenario\"}[1m])))",
+          "legendFormat": "{{orm}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Requests/sec",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (orm) (rate(k6_http_reqs_total{scenario=~\"$scenario\"}[1m]))",
+          "legendFormat": "{{orm}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Error rate %",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "100 * avg by (orm) (k6_http_req_failed_rate{scenario=~\"$scenario\"})",
+          "legendFormat": "{{orm}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Container CPU %",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "100 * sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"prisma-api|typeorm-api\"}[1m]))",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Container memory RSS",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "container_memory_rss{name=~\"prisma-api|typeorm-api\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Postgres active connections",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "pg_stat_database_numbackends{datname=~\"bench_.*\"}",
+          "legendFormat": "{{datname}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Postgres tup_returned/s",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "rate(pg_stat_database_tup_returned{datname=~\"bench_.*\"}[1m])",
+          "legendFormat": "{{datname}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "uid": "bench-results",
+  "title": "Prisma vs TypeORM — Benchmark Results",
+  "schemaVersion": 39,
+  "refresh": "",
+  "time": { "from": "now-30d", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "barchart", "title": "p95 latency (ms) — latest run per scenario",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "BenchResults" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "options": { "xTickLabelRotation": -30, "groupWidth": 0.7, "barWidth": 0.9, "stacking": "none", "orientation": "auto" },
+      "targets": [{
+        "refId": "A", "format": "table", "rawSql":
+          "SELECT scenario, MAX(CASE WHEN orm='prisma' THEN p95_ms END) AS prisma, MAX(CASE WHEN orm='typeorm' THEN p95_ms END) AS typeorm FROM (SELECT DISTINCT ON (orm, scenario) orm, scenario, p95_ms FROM bench_runs ORDER BY orm, scenario, ran_at DESC) t GROUP BY scenario ORDER BY scenario;"
+      }]
+    },
+    {
+      "id": 2, "type": "barchart", "title": "p99 latency (ms) — latest",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "BenchResults" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "options": { "xTickLabelRotation": -30, "groupWidth": 0.7, "barWidth": 0.9 },
+      "targets": [{
+        "refId": "A", "format": "table", "rawSql":
+          "SELECT scenario, MAX(CASE WHEN orm='prisma' THEN p99_ms END) AS prisma, MAX(CASE WHEN orm='typeorm' THEN p99_ms END) AS typeorm FROM (SELECT DISTINCT ON (orm, scenario) orm, scenario, p99_ms FROM bench_runs ORDER BY orm, scenario, ran_at DESC) t GROUP BY scenario ORDER BY scenario;"
+      }]
+    },
+    {
+      "id": 3, "type": "barchart", "title": "RPS — latest",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "BenchResults" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "options": { "xTickLabelRotation": -30, "groupWidth": 0.7, "barWidth": 0.9 },
+      "targets": [{
+        "refId": "A", "format": "table", "rawSql":
+          "SELECT scenario, MAX(CASE WHEN orm='prisma' THEN rps END) AS prisma, MAX(CASE WHEN orm='typeorm' THEN rps END) AS typeorm FROM (SELECT DISTINCT ON (orm, scenario) orm, scenario, rps FROM bench_runs ORDER BY orm, scenario, ran_at DESC) t GROUP BY scenario ORDER BY scenario;"
+      }]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "p95 over time per scenario",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "BenchResults" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [{
+        "refId": "A", "format": "time_series", "rawSql":
+          "SELECT ran_at AS time, scenario || ' / ' || orm AS metric, p95_ms AS value FROM bench_runs ORDER BY ran_at;"
+      }]
+    },
+    {
+      "id": 5, "type": "table", "title": "All runs",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "BenchResults" },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 32 },
+      "targets": [{
+        "refId": "A", "format": "table", "rawSql":
+          "SELECT ran_at, orm, scenario, ROUND(avg_ms::numeric, 1) AS avg_ms, ROUND(p50_ms::numeric, 1) AS p50_ms, ROUND(p95_ms::numeric, 1) AS p95_ms, ROUND(p99_ms::numeric, 1) AS p99_ms, ROUND(rps::numeric, 1) AS rps, ROUND(fail_pct::numeric, 2) AS fail_pct FROM bench_runs ORDER BY ran_at DESC, scenario, orm;"
+      }]
+    }
+  ]
+}
