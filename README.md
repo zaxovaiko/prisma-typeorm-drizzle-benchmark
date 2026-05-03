@@ -1,34 +1,37 @@
 # Prisma vs TypeORM vs Drizzle Performance Bench
 
-Reproducible head-to-head benchmark of NestJS + Prisma 7 vs NestJS + TypeORM 0.3 vs NestJS + Drizzle 0.44 on identical Postgres schema, identical workload, identical resource limits. Live Grafana dashboards via k6 → Prometheus, plus post-run charts via `scripts/charts-from-pg.ts`.
+Reproducible head-to-head benchmark of NestJS + Prisma 7 vs NestJS + TypeORM 0.3 vs NestJS + Drizzle (v1 RC) on identical Postgres schema, identical workload, identical resource limits. Live Grafana dashboards via k6 → Prometheus, plus post-run charts via `scripts/charts-from-pg.ts`.
 
 **📖 Full write-up + analysis**: [zaxovaiko.me/posts/prisma-vs-typeorm-vs-drizzle-deep-dive](https://www.zaxovaiko.me/posts/prisma-vs-typeorm-vs-drizzle-deep-dive)
 
 ## Final results
 
-12 scenarios, RUNS=1, Railway Hobby tier (8 vCPU / 8 GB shared), 2k users / 20k posts / 100k comments seed. Lower p95 = better. Lower RSS = better.
+12 scenarios, RUNS=1, Railway Hobby tier (8 vCPU / 8 GB shared), 2k users / 20k posts / 100k comments seed. Lower p95 = better. Lower RSS = better. Drizzle on `1.0.0-rc.1`.
 
-| Scenario | Prisma p95 | TypeORM p95 | Drizzle p95 | Prisma RSS | TypeORM RSS | Drizzle RSS | Winner |
+| Scenario | Prisma p95 | TypeORM p95 | Drizzle v1 p95 | Prisma RSS | TypeORM RSS | Drizzle RSS | Winner |
 |---|---:|---:|---:|---:|---:|---:|---|
-| simple-lookup | 213ms | **147ms** | 224ms | 248 MB | 241 MB | 214 MB | TypeORM |
-| relations | 301ms | **200ms** | 765ms | 714 MB | 348 MB | 510 MB | TypeORM |
-| pagination | **331ms** | 608ms | 1331ms | 961 MB | 345 MB | 375 MB | Prisma |
-| fulltext | 8604ms | 8505ms | 7815ms | 135 MB | 107 MB | 99 MB | tie (~10%) |
-| n+1 | **161ms** | 190ms | 514ms | 319 MB | 214 MB | 266 MB | Prisma |
-| bulk-insert | 67ms | **14ms** | 22ms | 244 MB | 228 MB | 206 MB | TypeORM |
-| deep-nested | 129ms | **113ms** | 1465ms | 862 MB | 323 MB | 372 MB | TypeORM |
-| raw-aggregation | 11086ms | 28738ms | **10689ms** | 135 MB | 106 MB | 102 MB | Drizzle |
-| cursor | 507ms | **279ms** | 585ms | 365 MB | 350 MB | 331 MB | TypeORM |
-| complex-filter | **35953ms** | 60001ms | 53046ms | 127 MB | 105 MB | 103 MB | Prisma (least-worst) |
-| delete | 798ms | **90ms** | 102ms | 232 MB | 212 MB | 203 MB | TypeORM |
-| transaction | 188ms | **127ms** | 150ms | 301 MB | 229 MB | 220 MB | TypeORM |
+| simple-lookup | 234ms | **150ms** | 151ms | 255 MB | 230 MB | 216 MB | TypeORM (Drizzle tied) |
+| relations | 339ms | **221ms** | 363ms | 679 MB | 344 MB | 360 MB | TypeORM |
+| pagination | **339ms** | 662ms | 618ms | 931 MB | 339 MB | 348 MB | Prisma |
+| fulltext | 8694ms | 8614ms | 8693ms | 135 MB | 106 MB | 101 MB | tie (~1%) |
+| n+1 | 201ms | **188ms** | 437ms | 311 MB | 215 MB | 267 MB | TypeORM |
+| bulk-insert | 70ms | **17ms** | 18ms | 239 MB | 231 MB | 205 MB | TypeORM (Drizzle tied) |
+| deep-nested | 166ms | **132ms** | 855ms | 688 MB | 324 MB | 334 MB | TypeORM |
+| raw-aggregation | **14082ms** | 33986ms | 20315ms | 125 MB | 103 MB | 101 MB | Prisma |
+| cursor | 587ms | 294ms | **274ms** | 358 MB | 347 MB | 321 MB | Drizzle |
+| complex-filter | 42530ms | 59996ms | **2115ms** | 122 MB | 105 MB | 267 MB | **Drizzle (28x faster)** |
+| delete | 502ms | 84ms | **77ms** | 236 MB | 215 MB | 203 MB | Drizzle |
+| transaction | 221ms | **115ms** | 116ms | 297 MB | 229 MB | 222 MB | TypeORM (Drizzle tied) |
 
-**Score**: TypeORM 7, Prisma 2 outright + 1 least-worst, Drizzle 2, fulltext tied. Memory: Drizzle wins 8/12.
+**Score**: TypeORM 6, Drizzle v1 3, Prisma 2, fulltext tied. Memory: Drizzle wins 7/12, TypeORM 5/12.
 
-**Key surprises** (full discussion in the blog post):
-- Drizzle's `LATERAL`+`json_agg` relational API is **3-13x slower than TypeORM's flat JOINs** under load. The gap grows with `with: { ... }` nesting depth.
-- Prisma's `delete` is **9x slower** than TypeORM thanks to `title::text LIKE` casting (kills `text_pattern_ops` index).
-- TypeORM's raw-aggregation outlier (28.7s vs ~11s for the other two) on identical raw SQL — likely connection-pool contention; flagged as suspect.
+**Headline finding**: Drizzle v1 RC's `complex-filter` runs in **2.1 seconds** while TypeORM grinds for **60 seconds** on the same workload. Drizzle's filter-object syntax produces a tighter EXISTS subquery the planner handles efficiently.
+
+**Other key surprises** (full discussion in the blog post):
+- Drizzle v1 RC closed major gaps vs 0.44.7: relations -53%, pagination -54%, deep-nested -42%, complex-filter -96%.
+- Prisma's `delete` is **6x slower** than the others thanks to `title::text LIKE` casting (kills `text_pattern_ops` index).
+- TypeORM's raw-aggregation outlier (33s vs ~14-20s for the other two) on identical raw SQL — likely connection-pool contention; flagged as suspect.
+- Apparent v1 RC regression on `raw-aggregation` (90% slower than 0.44.7) turned out to be system noise on Postgres — *all three ORMs* got slower between runs. Source inspection confirmed no meaningful Drizzle code change in the raw-execute path. Treated as run-to-run variance.
 
 ## Quickstart (local Docker)
 
@@ -52,7 +55,7 @@ See [`RAILWAY.md`](./RAILWAY.md). The numbers above were collected on Railway's 
 - NestJS 11 + Node 24 (Alpine Docker)
 - Prisma 7 (`@prisma/adapter-pg`)
 - TypeORM 0.3.28 (`@nestjs/typeorm` 11)
-- Drizzle 0.44 (`drizzle-orm/node-postgres`)
+- Drizzle `1.0.0-rc.1` (`drizzle-orm/node-postgres`, relational query API with `defineRelations`)
 - PostgreSQL 18
 - k6 (Prometheus remote-write + summary-export to Postgres)
 - Prometheus + Grafana + postgres_exporter + cAdvisor
@@ -88,5 +91,6 @@ See [`RAILWAY.md`](./RAILWAY.md). The numbers above were collected on Railway's 
 - Single-instance Postgres, no replicas, no PgBouncer.
 - Latency includes ORM CPU + JSON serialization + NestJS request lifecycle (by design — it's what users feel).
 - 20k posts is "medium." `LATERAL`+`json_agg` may scale better at 1M+ rows.
+- Drizzle on `1.0.0-rc.1` not GA — minor changes possible before 1.0 stable.
 
 Full reasoning + the Prisma optimization checklist that closes most of the gap is in the [blog post](https://www.zaxovaiko.me/posts/prisma-vs-typeorm-vs-drizzle-deep-dive).
