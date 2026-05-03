@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
-import { and, desc, eq, gte, ilike, inArray, like, lt, or, sql } from 'drizzle-orm';
+import { and, eq, ilike, inArray, like, or, sql } from 'drizzle-orm';
 import { DrizzleService } from './drizzle.service';
-import { categories, comments, postCategories, posts, users } from './schema';
+import { comments, posts } from './schema';
 
 @Controller()
 export class BenchController {
@@ -19,19 +19,19 @@ export class BenchController {
   // 1. Simple lookup
   @Get('users/:id')
   user(@Param('id', ParseIntPipe) id: number) {
-    return this.db.query.users.findFirst({ where: eq(users.id, id) });
+    return this.db.query.users.findFirst({ where: { id } });
   }
 
-  // 2. Complex with relations - relational query API emits a single SQL with json_agg subqueries
+  // 2. Complex with relations - Drizzle v1 relational query API
   @Get('posts/:id/full')
   postFull(@Param('id', ParseIntPipe) id: number) {
     return this.db.query.posts.findFirst({
-      where: eq(posts.id, id),
+      where: { id },
       with: {
         author: true,
         comments: {
           with: { author: true },
-          orderBy: desc(comments.createdAt),
+          orderBy: { createdAt: 'desc' },
           limit: 20,
         },
         postCategories: {
@@ -48,7 +48,7 @@ export class BenchController {
     const skip = (Number(page) - 1) * take;
     const rows = await this.db.query.posts.findMany({
       with: { author: true },
-      orderBy: desc(posts.createdAt),
+      orderBy: { createdAt: 'desc' },
       limit: take,
       offset: skip,
     });
@@ -80,8 +80,8 @@ export class BenchController {
   @Get('users/:id/feed')
   async feed(@Param('id', ParseIntPipe) id: number) {
     const userPosts = await this.db.query.posts.findMany({
-      where: eq(posts.authorId, id),
-      orderBy: desc(posts.createdAt),
+      where: { authorId: id },
+      orderBy: { createdAt: 'desc' },
       limit: 20,
     });
     if (!userPosts.length) return [];
@@ -152,29 +152,33 @@ export class BenchController {
     return result.rows;
   }
 
-  // 9. Cursor pagination - direct WHERE id < $1 (parity with TypeORM)
+  // 9. Cursor pagination - direct WHERE id < $1 via filter object
   @Get('posts/cursor')
   postsCursor(@Query('cursor') cursor?: string, @Query('limit') limit = '50') {
     const take = Math.min(Number(limit), 100);
     return this.db.query.posts.findMany({
-      where: cursor ? lt(posts.id, Number(cursor)) : undefined,
-      orderBy: desc(posts.id),
+      where: cursor ? { id: { lt: Number(cursor) } } : undefined,
+      orderBy: { id: 'desc' },
       limit: take,
     });
   }
 
-  // 10. Complex filter - OR + range + EXISTS
+  // 10. Complex filter - OR + range + EXISTS via filter object + raw SQL fragment
   @Get('posts/filter')
   postsFilter(@Query('term') term = 'alpha') {
     const since = new Date(Date.now() - 30 * 86400_000);
     const pattern = `%${term}%`;
     return this.db.query.posts.findMany({
-      where: and(
-        or(ilike(posts.title, pattern), ilike(posts.body, pattern)),
-        gte(posts.createdAt, since),
-        sql`EXISTS (SELECT 1 FROM "Post" pp WHERE pp."authorId" = ${posts.authorId} AND pp.id > 0)`,
-      ),
-      orderBy: desc(posts.createdAt),
+      where: {
+        AND: [
+          { OR: [{ title: { ilike: pattern } }, { body: { ilike: pattern } }] },
+          { createdAt: { gte: since } },
+          {
+            RAW: sql`EXISTS (SELECT 1 FROM "Post" pp WHERE pp."authorId" = ${posts.authorId} AND pp.id > 0)`,
+          },
+        ],
+      } as any,
+      orderBy: { createdAt: 'desc' },
       limit: 50,
     });
   }

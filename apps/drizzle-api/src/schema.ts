@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { defineRelations } from 'drizzle-orm';
 import { pgTable, serial, text, integer, timestamp, primaryKey } from 'drizzle-orm/pg-core';
 
 // Schema mirrors the raw SQL in load/seed/seed.ts byte-for-byte:
@@ -43,29 +43,28 @@ export const postCategories = pgTable(
   (t) => [primaryKey({ columns: [t.a, t.b] })],
 );
 
-// Relations for the relational query API (db.query.posts.findMany({ with: ... }))
+const schema = { users, categories, posts, comments, postCategories };
 
-export const usersRelations = relations(users, ({ many }) => ({
-  posts: many(posts),
-  comments: many(comments),
-}));
-
-export const postsRelations = relations(posts, ({ one, many }) => ({
-  author: one(users, { fields: [posts.authorId], references: [users.id] }),
-  comments: many(comments),
-  postCategories: many(postCategories),
-}));
-
-export const commentsRelations = relations(comments, ({ one }) => ({
-  post: one(posts, { fields: [comments.postId], references: [posts.id] }),
-  author: one(users, { fields: [comments.authorId], references: [users.id] }),
-}));
-
-export const categoriesRelations = relations(categories, ({ many }) => ({
-  postCategories: many(postCategories),
-}));
-
-export const postCategoriesRelations = relations(postCategories, ({ one }) => ({
-  post: one(posts, { fields: [postCategories.a], references: [posts.id] }),
-  category: one(categories, { fields: [postCategories.b], references: [categories.id] }),
+// Drizzle v1 uses `defineRelations(schema, helpers => ...)` instead of per-table `relations()` calls
+export const relations = defineRelations(schema, (r) => ({
+  users: {
+    posts: r.many.posts(),
+    comments: r.many.comments(),
+  },
+  posts: {
+    author: r.one.users({ from: r.posts.authorId, to: r.users.id }),
+    comments: r.many.comments(),
+    postCategories: r.many.postCategories(),
+  },
+  comments: {
+    post: r.one.posts({ from: r.comments.postId, to: r.posts.id }),
+    author: r.one.users({ from: r.comments.authorId, to: r.users.id }),
+  },
+  categories: {
+    postCategories: r.many.postCategories(),
+  },
+  postCategories: {
+    post: r.one.posts({ from: r.postCategories.a, to: r.posts.id }),
+    category: r.one.categories({ from: r.postCategories.b, to: r.categories.id }),
+  },
 }));
